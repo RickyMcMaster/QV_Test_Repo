@@ -1,0 +1,2 @@
+*.qvw -crlf -diff -merge
+*.qvd -crlf -diff -merge

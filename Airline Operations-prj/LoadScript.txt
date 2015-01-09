@@ -1,0 +1,256 @@
+﻿///$tab Information
+///$tab Main
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET MoneyThousandSep=',';
+SET MoneyDecimalSep='.';
+SET MoneyFormat='$#,##0.00;($#,##0.00)';
+SET TimeFormat='h:mm:ss TT';
+SET DateFormat='M/D/YYYY';
+SET TimestampFormat='M/D/YYYY h:mm:ss[.fff] TT';
+SET MonthNames='Jan;Feb;Mar;Apr;May;Jun;Jul;Aug;Sep;Oct;Nov;Dec';
+SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
+
+
+SET vLoadMainData= 'Y';
+///$tab Includes
+$(Include=config.qvs);
+
+
+$(Include=tracerowcount.qvs);
+///$tab Mapping
+Map_Manufacturer_Country:
+MAPPING LOAD Company, 
+     Country
+FROM
+[$(vFolderSourceData)CSVs\Aircraft_Manufacturers.csv]
+(txt, codepage is 1252, embedded labels, delimiter is ';', msq);
+
+
+Map_Table_Comments:
+MAPPING LOAD TableName, 
+     Comment
+FROM
+[$(vFolderSourceData)Excel\Comments.xls]
+(biff, embedded labels, table is Tables$);
+
+
+Map_Field_Comments:
+MAPPING LOAD FieldName, 
+     Comment
+FROM
+[$(vFolderSourceData)Excel\Comments.xls]
+(biff, embedded labels, table is Fields$);
+
+///$tab Comments
+COMMENT TABLES USING Map_Table_Comments;
+COMMENT FIELDS USING Map_Field_Comments;
+///$tab Aircrafts
+[Aircraft Types]:
+LOAD AC_TYPEID 							as [%Aircraft Type ID], 
+     AC_GROUP 							as [%Aircraft Group Type], 
+     SSD_NAME 							as [Aircraft Name], 
+     MANUFACTURER	 					as [Aircraft Manufacturer], 
+     ApplyMap('Map_Manufacturer_Country', 
+     MANUFACTURER, 'Unknown') as [Aircraft Manufacturer Country],
+     LONG_NAME as [Aircraft Name Full], 
+     SHORT_NAME as [Aircraft Name Abbreviated], 
+     BEGIN_DATE as [Aircraft Begin Date], 
+     If(Year(BEGIN_DATE) < 1990, 'Classic', 'Current') as [Aircraft Age Classification],
+     END_DATE as [Aircraft End Date]
+FROM
+[$(vFolderSourceData)CSVs\Aircraft_Base_File.csv]
+(txt, codepage is 1252, embedded labels, delimiter is ';', msq)
+WHERE Exists([%Aircraft Type ID], AC_TYPEID);
+;
+
+CALL TraceRowCount('Aircraft Types');
+
+LEFT JOIN ([Aircraft Types])
+LOAD [Aircraft Group ID] as [%Aircraft Group Type], 
+     [Aircraft Engine Type], 
+     [Aircraft Number Of Engines]
+FROM
+[$(vFolderSourceData)CSVs\Aircraft_Group.csv]
+(txt, codepage is 1252, embedded labels, delimiter is ';', msq);
+
+CALL TraceRowCount('Aircraft Types');
+
+DROP Field [%Aircraft Group Type] From [Aircraft Types];
+
+Concatenate([Aircraft Types])
+LOAD AC_TYPEID as [%Aircraft Type ID], 
+     SubField(AC_GROUPNAME, ', ', 1) AS  [Aircraft Engine Type],
+ 	 SubField(AC_GROUPNAME, ', ', 2) AS  [Aircraft Number of Engines],   
+     SSD_NAME as [Aircraft Name], 
+     MANUFACTURER as [Aircraft Manufacturer], 
+     ApplyMap('Map_Manufacturer_Country', MANUFACTURER, 'Unknown') as [Aircraft Manufacturer Country],
+     LONG_NAME as [Aircraft Name Full], 
+     SHORT_NAME as [Aircraft Name Abbreviated], 
+     BEGIN_DATE as [Aircraft Begin Date],
+     'Current' as [Aircraft Age Classification],
+     END_DATE as [Aircraft End Date]
+FROM
+[$(vFolderSourceData)CSVs\Aircraft_2010_Update.csv]
+(txt, codepage is 1252, embedded labels, delimiter is ';', msq);
+
+
+STORE [Aircraft Types] INTO '$(vFolderSourceData)QVDs\AircraftTypesTransformed.qvd' (qvd);
+///$tab Main Data
+IF '$(vLoadMainData)' = 'Y' THEN
+
+[Main Data]:
+LOAD [%Airline ID], 
+     [%Carrier Group ID], 
+     [%Unique Carrier Code], 
+     [%Unique Carrier Entity Code], 
+     [%Region Code], 
+     [%Origin Airport ID], 
+     [%Origin Airport Sequence ID], 
+     [%Origin Airport Market ID], 
+     [%Origin World Area Code], 
+     [%Destination Airport ID], 
+     [%Destination Airport Sequence ID], 
+     [%Destination Airport Market ID], 
+     [%Destination World Area Code], 
+     [%Aircraft Group ID], 
+     [%Aircraft Type ID], 
+     [%Aircraft Configuration ID], 
+     [%Distance Group ID], 
+     [%Service Class ID], 
+     [%Datasource ID], 
+     [# Departures Scheduled], 
+     [# Departures Performed], 
+     [# Payload], 
+     Distance, 
+     [# Available Seats], 
+     [# Transported Passengers], 
+     [# Transported Freight], 
+     [# Transported Mail], 
+     [# Ramp-To-Ramp Time], 
+     [# Air Time], 
+     [Unique Carrier], 
+     [Carrier Code], 
+     [Carrier Name], 
+     [Origin Airport Code], 
+     [Origin City], 
+     [Origin State Code], 
+     [Origin State FIPS], 
+     [Origin State], 
+     [Origin Country Code], 
+     [Origin Country], 
+     [Destination Airport Code], 
+     [Destination City], 
+     [Destination State Code], 
+     [Destination State FIPS], 
+     [Destination State], 
+     [Destination Country Code], 
+     [Destination Country], 
+     Year, 
+     Period, 
+     Quarter, 
+     [Month (#)], 
+     Month, 
+     [From - To Airport Code], 
+     [From - To Airport ID], 
+     [From - To City], 
+     [From - To State Code], 
+     [From - To State]
+FROM
+[$(vFolderSourceData)QVDs\Flight Data.qvd]
+(qvd);
+
+ENDIF
+
+//Temp_Aircraft_Type_Dim:
+//RIGHT KEEP ([Aircraft Types])
+//LOAD DISTINCT
+//[%Aircraft Type ID]
+//RESIDENT [Main Data];
+//
+//DROP TABLE Temp_Aircraft_Type_Dim;
+///$tab Airlines
+[Carrier Groups]:
+LOAD [%Carrier Group ID], 
+     [Carrier Group]
+FROM
+[$(vFolderSourceData)QVDs\Carrier Groups.qvd]
+(qvd)
+WHERE EXISTS ([%Carrier Group ID])
+;
+
+[Airlines]:
+LOAD [%Airline ID], 
+     Airline
+FROM
+[$(vFolderSourceData)QVDs\Airlines.qvd]
+(qvd)
+WHERE EXISTS([%Airline ID])
+;
+
+[Carrier Operating Region]:
+LOAD [%Region Code], 
+     [Carrier's Operating Region]
+FROM
+[$(vFolderSourceData)QVDs\Carrier Operating Region.qvd]
+(qvd)
+WHERE EXISTS ([%Region Code])
+;
+
+[Flight Types]:
+LOAD [%Datasource ID], 
+     [Flight Type]
+FROM
+[$(vFolderSourceData)QVDs\Flight Types.qvd]
+(qvd)
+WHERE EXISTS ([%Datasource ID])
+;
+
+///$tab Airports
+[Distance Groups]:
+LOAD [%Distance Group ID], 
+     [Distance Interval]
+FROM
+[$(vFolderSourceData)QVDs\Distance Groups.qvd]
+(qvd);
+
+
+OLEDB CONNECT32 TO [Provider=Microsoft.Jet.OLEDB.4.0;User ID=Admin;Data Source=C:\Users\ricky.mcmaster\Documents\QlikView\QVFD\6068EN Code Bundle\Final Pack\Chapters 1 - 11\QlikView Development\Airline Operations\Data Files\MDBs\Dimension Tables.mdb;Mode=Share Deny None;Extended Properties="";Jet OLEDB:System database="";Jet OLEDB:Registry Path="";Jet OLEDB:Database Password="";Jet OLEDB:Engine Type=5;Jet OLEDB:Database Locking Mode=1;Jet OLEDB:Global Partial Bulk Ops=2;Jet OLEDB:Global Bulk Transactions=1;Jet OLEDB:New Database Password="";Jet OLEDB:Create System Database=False;Jet OLEDB:Encrypt Database=False;Jet OLEDB:Don't Copy Locale on Compact=False;Jet OLEDB:Compact Without Replica Repair=False;Jet OLEDB:SFP=False];
+
+[Origin Airports]:
+LEFT KEEP ([Main Data])
+LOAD `%Origin Airport ID`,
+    `Origin Airport`;
+SQL SELECT `%Origin Airport ID`,
+    `Origin Airport`
+FROM `Origin Airports`;
+
+
+[Destination Airports]:
+LEFT KEEP ([Main Data])
+LOAD `%Destination Airport ID`,
+    `Destination Airport`;
+SQL SELECT `%Destination Airport ID`,
+    `Destination Airport`
+FROM `Destination Airports`;
+
+
+[Origin Markets]:
+LEFT KEEP ([Main Data])
+LOAD [%Origin Airport Market ID], 
+     [Origin Market]
+FROM
+[$(vFolderSourceData)CSVs\Origin Markets.csv]
+(txt, codepage is 1252, embedded labels, delimiter is '\t', msq)
+WHERE(1=1);
+
+
+
+[Destination Markets]:
+LEFT KEEP ([Main Data])
+LOAD [%Destination Airport Market ID], 
+     [Destination Market]
+FROM
+[$(vFolderSourceData)CSVs\Destination Markets.csv]
+(txt, codepage is 1252, embedded labels, delimiter is '\t', msq);
+
